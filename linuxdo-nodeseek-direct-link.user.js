@@ -2,7 +2,7 @@
 // @name         LinuxDo & NodeSeek 外链直达与直链复制
 // @namespace    https://github.com/RatedR9/linuxdo-nodeseek-direct-link
 // @version      1.2
-// @description  在 Linux.do (linuxfo) 和 NodeSeek 社区中，点击外部链接直接复制直链且阻止跳转；外链旁附带【📋 复制】与【↗ 打开】双快捷按钮；彻底去除中间重定向拦截页；支持 Ctrl/Cmd/Alt+点击或中键直达原链
+// @description  在 Linux.do (linuxfo) 和 NodeSeek 社区中，点击外部链接直接复制直链且阻止跳转；外链旁智能生成【复制直链】与【新标签打开】快捷双按钮；彻底去除中间重定向拦截页；支持 Ctrl/Cmd/Alt+点击或中键直达原链
 // @author       RatedR9 & Antigravity
 // @match        *://linux.do/*
 // @match        *://*.linux.do/*
@@ -24,13 +24,12 @@
       .ns-ld-btn-group {
         display: inline-flex;
         align-items: center;
-        gap: 3px;
         margin-left: 5px;
         margin-right: 3px;
+        gap: 3px;
         vertical-align: middle;
-        user-select: none;
       }
-      .ns-ld-btn {
+      .ns-ld-copy-btn, .ns-ld-open-btn {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -62,10 +61,15 @@
         border-color: #16a34a !important;
       }
       .ns-ld-open-btn:hover {
-        color: #2563eb;
-        background: rgba(37, 99, 235, 0.15);
-        border-color: rgba(37, 99, 235, 0.4);
+        color: #0284c7;
+        background: rgba(14, 165, 233, 0.15);
+        border-color: rgba(14, 165, 233, 0.4);
         transform: translateY(-0.5px);
+      }
+      .ns-ld-open-btn.opening {
+        color: #ffffff !important;
+        background: #0284c7 !important;
+        border-color: #0284c7 !important;
       }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -208,7 +212,7 @@
         <span style="font-size:14px; font-weight:600; color:#4ade80;">${title}</span>
       </div>
       <div style="font-size:12px; color:#cbd5e1; word-break:break-all; max-width:420px; max-height:40px; overflow:hidden; text-overflow:ellipsis;">${link}</div>
-      <div style="font-size:11px; color:#94a3b8; margin-top:2px;">💡 提示：点击【↗ 打开】或按住 Ctrl/Cmd 单击可在新标签页直接打开</div>
+      <div style="font-size:11px; color:#94a3b8; margin-top:2px;">💡 提示：点击旁边【↗ 打开】或按住 Ctrl / Cmd 点击可直接新标签打开</div>
     `;
 
     requestAnimationFrame(() => {
@@ -241,8 +245,8 @@
 
   // ── 6. 核心：全局捕获阶段劫持点击事件 ─────────────────────────────────────
   function handleGlobalLinkClick(e) {
-    // 忽略点击在独立快捷按钮上的情况（由按钮自身独立监听器处理）
-    if (e.target.closest('.ns-ld-btn, .ns-ld-btn-group')) return;
+    // 忽略点击在独立按钮组上的情况（由按钮自身独立监听器处理）
+    if (e.target.closest('.ns-ld-btn-group, .ns-ld-copy-btn, .ns-ld-open-btn')) return;
 
     const a = e.target.closest('a');
     if (!a) return;
@@ -256,11 +260,11 @@
       e.stopPropagation();
       e.stopImmediatePropagation();
       window.open(directUrl, '_blank', 'noopener,noreferrer');
-      showToast('🚀 已在新标签页直接打开原链', directUrl);
+      showToast('🚀 已在新标签页直接直达原链', directUrl);
       return;
     }
 
-    // B. 普通鼠标左键单击链接文本：彻底阻止跳转，直接复制直链到剪贴板！
+    // B. 普通鼠标左键单击：彻底阻止跳转，直接复制直链到剪贴板！
     if (e.button === 0) {
       e.preventDefault();
       e.stopPropagation();
@@ -277,13 +281,13 @@
     if (e.button === 1) handleGlobalLinkClick(e);
   }, true);
 
-  // ── 7. DOM 巡检、原链清洗与快捷按钮组注入（复制 + 新标签打开） ──────────────
-  function attachButtonsAndPurify() {
+  // ── 7. DOM 巡检、原链清洗与快捷操作双按钮注入 ──────────────────────────────
+  function attachActionsAndPurify() {
     injectStyles();
 
     const links = document.querySelectorAll('a[href]');
     for (const a of links) {
-      // 忽略头像、图片等无文字非内容链接
+      // 忽略头像、图片、头部导航等非内容区域链接
       if (a.closest('.avatar, .user-avatar, .header, nav, footer, #header')) continue;
 
       const direct = extractDirectUrl(a);
@@ -298,59 +302,69 @@
       if (!a.hasAttribute('data-direct-handled')) {
         a.setAttribute('data-direct-handled', 'true');
         const origTitle = a.getAttribute('title') || '';
-        a.setAttribute('title', (origTitle ? origTitle + '\n' : '') + '📋 单击直接复制直链 (Ctrl/Cmd+点击打开)');
+        a.setAttribute('title', (origTitle ? origTitle + '\n' : '') + '📋 单击直接复制直链 (点击旁边按钮可新标签打开)');
       }
 
-      // 7.3 在链接附近注入独立按钮组（【📋 复制】与【↗ 打开】）
-      if (!a.hasAttribute('data-has-copy-btn')) {
-        const next = a.nextElementSibling;
-        if (!next || !next.classList.contains('ns-ld-btn-group')) {
-          const group = document.createElement('span');
-          group.className = 'ns-ld-btn-group';
-
-          // 按钮 1：复制直链
-          const copyBtn = document.createElement('span');
-          copyBtn.className = 'ns-ld-btn ns-ld-copy-btn';
-          copyBtn.innerHTML = '📋 复制';
-          copyBtn.title = '一键复制此直链到剪贴板';
-
-          copyBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-
-            copyToClipboard(direct);
-            showToast('直链已成功复制到剪贴板！', direct);
-
-            copyBtn.classList.add('copied');
-            copyBtn.innerHTML = '✓ 已复制';
-            setTimeout(() => {
-              copyBtn.classList.remove('copied');
-              copyBtn.innerHTML = '📋 复制';
-            }, 1200);
-          });
-
-          // 按钮 2：在新标签页直接打开
-          const openBtn = document.createElement('span');
-          openBtn.className = 'ns-ld-btn ns-ld-open-btn';
-          openBtn.innerHTML = '↗ 打开';
-          openBtn.title = '在新标签页直接打开此直链 (跳过中转拦截)';
-
-          openBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-
-            window.open(direct, '_blank', 'noopener,noreferrer');
-            showToast('🚀 已在新标签页直接打开原链', direct);
-          });
-
-          group.appendChild(copyBtn);
-          group.appendChild(openBtn);
-
-          a.insertAdjacentElement('afterend', group);
-          a.setAttribute('data-has-copy-btn', 'true');
+      // 7.3 在链接附近注入快捷操作双按钮（复制直链 + 新标签打开）
+      const next = a.nextElementSibling;
+      if (!next || !next.classList.contains('ns-ld-btn-group')) {
+        // 如果之前有老版单按钮，先清理
+        if (next && next.classList.contains('ns-ld-copy-btn')) {
+          next.remove();
         }
+
+        const group = document.createElement('span');
+        group.className = 'ns-ld-btn-group';
+
+        // 按钮 1：复制直链
+        const copyBtn = document.createElement('span');
+        copyBtn.className = 'ns-ld-copy-btn';
+        copyBtn.innerHTML = '📋 复制';
+        copyBtn.title = '一键复制此直链到剪贴板';
+
+        copyBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          copyToClipboard(direct);
+          showToast('直链已成功复制到剪贴板！', direct);
+
+          copyBtn.classList.add('copied');
+          copyBtn.innerHTML = '✓ 已复制';
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+            copyBtn.innerHTML = '📋 复制';
+          }, 1200);
+        });
+
+        // 按钮 2：新标签打开此链接
+        const openBtn = document.createElement('span');
+        openBtn.className = 'ns-ld-open-btn';
+        openBtn.innerHTML = '↗ 打开';
+        openBtn.title = '在新标签页直接打开此直链（跳过中转拦截）';
+
+        openBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          window.open(direct, '_blank', 'noopener,noreferrer');
+          showToast('🚀 已在新标签页打开直链', direct);
+
+          openBtn.classList.add('opening');
+          openBtn.innerHTML = '✓ 已打开';
+          setTimeout(() => {
+            openBtn.classList.remove('opening');
+            openBtn.innerHTML = '↗ 打开';
+          }, 1200);
+        });
+
+        group.appendChild(copyBtn);
+        group.appendChild(openBtn);
+
+        a.insertAdjacentElement('afterend', group);
+        a.setAttribute('data-has-copy-btn', 'true');
       }
     }
   }
@@ -373,11 +387,11 @@
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-      attachButtonsAndPurify();
-      new MutationObserver(attachButtonsAndPurify).observe(document.body, { childList: true, subtree: true });
+      attachActionsAndPurify();
+      new MutationObserver(attachActionsAndPurify).observe(document.body, { childList: true, subtree: true });
     });
   } else {
-    attachButtonsAndPurify();
-    new MutationObserver(attachButtonsAndPurify).observe(document.body, { childList: true, subtree: true });
+    attachActionsAndPurify();
+    new MutationObserver(attachActionsAndPurify).observe(document.body, { childList: true, subtree: true });
   }
 })();
